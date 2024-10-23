@@ -12,7 +12,7 @@ When we delete a tuple, Postgres still keep the tuple in the disk, only marking 
 
 Dead tuples uses extra space, so when there’s many deletes (and updates!), even without any new inserts, postgres will use more and more disk space. 
 
-Then the question become
+The question become
 
 > Why is there a need for dead tuple? Why not just actually delete it from the disk?
 

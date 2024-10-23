@@ -4,15 +4,23 @@
         <meta charset="UTF-8">
         <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
         <meta name="viewport" content="width=device-width, minimal-ui, initial-scale=1, viewport-fit=cover">
-        <title>Welcome to my site</title>
+        <title>Welcome!</title>
         <link rel="icon" type="image/png" href="assets/images/favicon.png">
         <link href="assets/css/main.css" rel="stylesheet">
     </head>
     <body>
-        <h1 id="welcome-to-my-site">Welcome to my site</h1>
-<h3 id="this-is-fancy">This is fancy</h3>
-<p>This is written in markdown</p>
-<p>Check out <a href="test.html">this markdown page</a></p>
+        <h1 id="welcome">Welcome!</h1>
+<p>This blog is to share what I found interesting in Software Engineering.</p>
+<p>--</p>
+<h2 id="postgres-dead-tuples">Postgres’ Dead Tuples</h2>
+<p>When we delete a tuple, Postgres still keep the tuple in the disk, only marking it as deleted. This is called dead tuples.</p>
+<p>Dead tuples uses extra space, so when there’s many deletes (and updates!), even without any new inserts, postgres will use more and more disk space. </p>
+<p>Then the question become</p>
+<blockquote>
+<p>Why is there a need for dead tuple? Why not just actually delete it from the disk?</p>
+</blockquote>
+<p><a href="postgres-dead-tuple.html">Read more</a></p>
+<p>--</p>
 
     </body>
 </html>

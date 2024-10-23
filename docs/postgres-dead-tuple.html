@@ -71,10 +71,12 @@ So that&#39;s the trade-off.</p>
 </blockquote>
 <p>Dead tuples affect performance as well.</p>
 <p>This is because during read query, postgres read the table page by page.
-If there&#39;s many dead tuple in those pages, then <strong>the total number of bytes</strong> to be read by postgres increased too.
+If there&#39;s many dead tuple in those pages, then <strong>the total number of bytes read</strong> by postgres increased too.
 This will lead to extra processing, lowering performance.</p>
-<pre><code>Segway to columnar databases
+<blockquote>
+<p>Segway to columnar databases</p>
+<p>From the reason above, we can then explain why a columnar database is more efficient to do aggregating query on a column compared to a row based (relational) database.</p>
+</blockquote>
 
-From the reason above, we can then explain why a columnar database is more efficient to <span class="hljs-keyword">do</span> aggregating query on a column compared to a row based (relational) database</code></pre>
     </body>
 </html>

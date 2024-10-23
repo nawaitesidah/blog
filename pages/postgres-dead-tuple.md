@@ -70,11 +70,11 @@ In contrast, VACUUM FULL rewrites the whole pages and excluding the dead tuples.
 Dead tuples affect performance as well.
 
 This is because during read query, postgres read the table page by page.
-If there's many dead tuple in those pages, then the total number of bytes to be read by postgres increased too.
+If there's many dead tuple in those pages, then **the total number of bytes** to be read by postgres increased too.
 This will lead to extra processing, lowering performance.
 
 ```
 Segway to columnar databases
 
-From the reason above, we can then explain why a columnar database is more efficient to do aggregating query on a column compared to a row based (relational) database. 
+From the reason above, we can then explain why a columnar database is more efficient to do aggregating query on a column compared to a row based (relational) database
 ```

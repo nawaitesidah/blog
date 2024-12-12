@@ -2,6 +2,18 @@
 
 This blog is to share what I found interesting in Software Engineering.
 
+Feel free to leave a comment [here](https://github.com/nawaitesidah/blog/discussions) 
+
+--
+
+## Load balancing: Kubernetes Service, Istio, and Kong
+
+*2024-12-13*
+
+I've always wondered what service mesh like Istio actually do. How it compared to Kubernetes' Service, and unexpectedly how it relates to Kong.
+
+[Read more](?load-balancing-kubernetes-service-istio-and-kong)
+
 --
 
 ## Postgres’ Dead Tuples

@@ -76,3 +76,5 @@ This will lead to extra processing, lowering performance.
 > Segway to columnar databases
 >
 > From the reason above, we can then explain why a columnar database is more efficient to do aggregating query on a column compared to a row based (relational) database.
+
+[Home](?index)

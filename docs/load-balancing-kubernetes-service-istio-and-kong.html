@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+        <meta name="viewport" content="width=device-width, minimal-ui, initial-scale=1, viewport-fit=cover">
+        <title>Load balancing: Kubernetes Service, Istio, and Kong</title>
+        <link rel="icon" type="image/png" href="assets/images/favicon.png">
+        <link href="assets/css/main.css" rel="stylesheet">
+    </head>
+    <body>
+        <h1 id="load-balancing-kubernetes-service-istio-and-kong">Load balancing: Kubernetes Service, Istio, and Kong</h1>
+<p><em>2024-12-13</em></p>
+<p>I&#39;ve always wondered what service mesh like Istio actually do. How it compared to Kubernetes&#39; Service, and unexpectedly how it relates to Kong.</p>
+<p>From the documentation:</p>
+<blockquote>
+<p><strong>Istio is an open source service mesh that layers transparently onto existing distributed applications. Istio’s powerful features provide a uniform and more efficient way to secure, connect, and monitor services. Istio is the path to load balancing, service-to-service authentication, and monitoring – with few or no service code changes</strong></p>
+</blockquote>
+<p>We can see that it adds a lots of stuff, but lets focus on the load balancing. In kubernetes environment, we already have Service resource for this, where connection to the service is load balanced to the pod matching the service selector.</p>
+<h2 id="so-if-we-already-have-kubernetes-service-why-would-we-still-need-istio-for-load-balancing">So, if we already have kubernetes service, why would we still need istio for load balancing?</h2>
+<p>The answer lies in which layer the load balance happen.</p>
+<p>For kubernetes service, it happens on Layer 4. Which means it happen when establishing TCP connection. So it&#39;ll load balance the traffic when a TCP connection is established. </p>
+<h3 id="nice-it-load-balances-my-traffic-end-of-story-right">Nice, it load balances my traffic, end of story right…?</h3>
+<p>The thing is, some protocol can reuse TCP connection, e.g. HTTP/1.1 with the keep-alive connections, HTTP/2, gRPC, WebSocket.</p>
+<p>So, once a connection is established, it will be reused to handle multiple subsequent traffic. This is to prevent the overhead of establishing new connection.</p>
+<p>But it can also causes some <strong>unexpected issue</strong> for load balancing. Consider that if we reuse a set of TCP connections created to a kubernetes deployments with 2 replicas. What will happen if we spawn a new replica?</p>
+<p>For example, a deployment in Kubernetes are exposed via kong gateway, by using the kubernetes Service e.g. <code>example-service.namespace.svc.cluster.local</code> as the upstream target. And initially there&#39;s only two replicas of this deployment, then sometime later the deployment is increased to 3 pods</p>
+<p>When kong receives traffic, it&#39;ll first open a TCP connection to any of the two pods and forward the request through it. On subsequent request, kong will reuse this connection again. Kong will reuse this connection for 10000 times, which is the default value of <code>upstream_keepalive_max_request</code>.</p>
+<p>This means kong will have to go through these 10000 requests to the old pods first before creating a new connection. </p>
+<p><em>(Or if there&#39;s a new incoming request and all of the existing connections are busy, then kong will spawn the new connection to the service, or until the connection is idle for 60 seconds, which is the default <code>upstream_keepalive_idle_timeout</code>.)</em></p>
+<p>Let&#39;s consider an extreme case, where the API traffic is 6000 RPM and moderate amount of concurrent requests, lets say it&#39;s a stable 30 concurrent client requests at all times, this means at the start kong will have at least 15 connections established to two existing pods, each with a quota of 10000 requests.</p>
+<p>With these values, it&#39;ll exhaust the connections after 50 minutes! (10000 request quota x 30 established connections / 6000 rpm).</p>
+<p>Then after exhausting the connection, it&#39;ll establish a new connection to <strong>one random pod (yes, RANDOM)</strong>.</p>
+<h2 id="kubernestes-service">Kubernestes Service</h2>
+<p>The default Service in kubernetes (Cluster IP Service), is actually backed by iptables. And the ip tables are randomly routing between the available pods, not round robin, and certainly not least used.</p>
+<p>Here&#39;s the config to be exact:</p>
+<pre><code>Chain KUBE-SVC-XXXXXXXXXXXXXXX (<span class="hljs-number">1</span> references)
+ pkts bytes target                prot opt <span class="hljs-keyword">in</span>     <span class="hljs-keyword">out</span>     source               destination         
+    <span class="hljs-number">0</span>     <span class="hljs-number">0</span> KUBE-MARK-MASQ         tcp  --  *      *      !<span class="hljs-number">10.128</span><span class="hljs-number">.0</span><span class="hljs-number">.0</span>/<span class="hljs-number">16</span>       <span class="hljs-number">10.128</span><span class="hljs-number">.50</span><span class="hljs-number">.100</span>        <span class="hljs-comment">/* example-service.namespace.svc.cluster.local cluster IP */</span> tcp dpt:<span class="hljs-number">8080</span>
+    <span class="hljs-number">0</span>     <span class="hljs-number">0</span> KUBE-SEP-AAAAAAAAAAAAA tcp  --  *      *       <span class="hljs-number">0.0</span><span class="hljs-number">.0</span><span class="hljs-number">.0</span>/<span class="hljs-number">0</span>           <span class="hljs-number">0.0</span><span class="hljs-number">.0</span><span class="hljs-number">.0</span>/<span class="hljs-number">0</span>            statistic mode random probability <span class="hljs-number">0.33333333333</span>
+    <span class="hljs-number">0</span>     <span class="hljs-number">0</span> KUBE-SEP-BBBBBBBBBBBBB tcp  --  *      *       <span class="hljs-number">0.0</span><span class="hljs-number">.0</span><span class="hljs-number">.0</span>/<span class="hljs-number">0</span>           <span class="hljs-number">0.0</span><span class="hljs-number">.0</span><span class="hljs-number">.0</span>/<span class="hljs-number">0</span>            statistic mode random probability <span class="hljs-number">0.50000000000</span>
+    <span class="hljs-number">0</span>     <span class="hljs-number">0</span> KUBE-SEP-CCCCCCCCCCCCC tcp  --  *      *       <span class="hljs-number">0.0</span><span class="hljs-number">.0</span><span class="hljs-number">.0</span>/<span class="hljs-number">0</span>           <span class="hljs-number">0.0</span><span class="hljs-number">.0</span><span class="hljs-number">.0</span>/<span class="hljs-number">0</span>            
+
+Chain KUBE-SEP-AAAAAAAAAAAAA (<span class="hljs-number">1</span> references)
+ pkts bytes target                prot opt <span class="hljs-keyword">in</span>     <span class="hljs-keyword">out</span>     source               destination         
+    <span class="hljs-number">0</span>     <span class="hljs-number">0</span> DNAT                  tcp  --  *      *       <span class="hljs-number">0.0</span><span class="hljs-number">.0</span><span class="hljs-number">.0</span>/<span class="hljs-number">0</span>           <span class="hljs-number">10.128</span><span class="hljs-number">.60</span><span class="hljs-number">.10</span>         <span class="hljs-comment">/* pod-1 for example-service */</span> tcp to:<span class="hljs-number">10.128</span><span class="hljs-number">.60</span><span class="hljs-number">.10</span>:<span class="hljs-number">8080</span>
+
+Chain KUBE-SEP-BBBBBBBBBBBBB (<span class="hljs-number">1</span> references)
+ pkts bytes target                prot opt <span class="hljs-keyword">in</span>     <span class="hljs-keyword">out</span>     source               destination         
+    <span class="hljs-number">0</span>     <span class="hljs-number">0</span> DNAT                  tcp  --  *      *       <span class="hljs-number">0.0</span><span class="hljs-number">.0</span><span class="hljs-number">.0</span>/<span class="hljs-number">0</span>           <span class="hljs-number">10.128</span><span class="hljs-number">.60</span><span class="hljs-number">.11</span>         <span class="hljs-comment">/* pod-2 for example-service */</span> tcp to:<span class="hljs-number">10.128</span><span class="hljs-number">.60</span><span class="hljs-number">.11</span>:<span class="hljs-number">8080</span>
+
+Chain KUBE-SEP-CCCCCCCCCCCCC (<span class="hljs-number">1</span> references)
+ pkts bytes target                prot opt <span class="hljs-keyword">in</span>     <span class="hljs-keyword">out</span>     source               destination         
+    <span class="hljs-number">0</span>     <span class="hljs-number">0</span> DNAT                  tcp  --  *      *       <span class="hljs-number">0.0</span><span class="hljs-number">.0</span><span class="hljs-number">.0</span>/<span class="hljs-number">0</span>           <span class="hljs-number">10.128</span><span class="hljs-number">.60</span><span class="hljs-number">.12</span>         <span class="hljs-comment">/* pod-3 for example-service */</span> tcp to:<span class="hljs-number">10.128</span><span class="hljs-number">.60</span><span class="hljs-number">.12</span>:<span class="hljs-number">8080</span></code></pre><p>So when kong establish connection to <code>example-service.namespace.svc.cluster.local</code>, it&#39;ll go through these steps:</p>
+<ol>
+<li>Roll a 33% chance to be resolved as the first pod’s IP.</li>
+<li>Otherwise roll a 50% chance to resolve as the second pod&#39;s IP.</li>
+<li>Otherwise it&#39;ll be resolved to the third pod.</li>
+</ol>
+<p>And once connected, it&#39;ll be reused for 10000 times again. So Kubernetes Service may not the best tool to load balance traffic, especially long lived connections.</p>
+<h2 id="enter-istio">Enter istio</h2>
+<p>Istio load balancer works on Layer 7. This means that it&#39;s aware of protocols like HTTP/1.1, HTTP/2, or gRPC.</p>
+<p>So on <strong>each individual request</strong>, istio will route it to the corresponding pods, unlike Kubernetes service that only load balance on establishing new TCP connections. This will lead to each pods having more balanced loads.</p>
+<p>If you need to load balance long lived connections, you&#39;ll need L7 load balancer like istio.</p>
+<p><em>Note: Alternatively we can reduce the <code>upstream_keepalive_max_request</code> value. So that kong will be more frequently establish new connections, and hopefully will randomly land to a less used pods.</em></p>
+<p><a href="index.html">Home</a></p>
+
+    </body>
+</html>

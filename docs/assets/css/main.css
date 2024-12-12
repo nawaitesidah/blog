@@ -196,7 +196,7 @@ blockquote {
 
 /* Monokai Sublime style. Derived from Monokai by noformnocontent http://nn.mit-license.org/ */
 
-.hljs {
+.hljs, pre > code {
     display: block;
     overflow-x: auto;
     padding: 0.5em;
